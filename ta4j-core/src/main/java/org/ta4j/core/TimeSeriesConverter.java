@@ -65,7 +65,7 @@ public class TimeSeriesConverter {
 		ZonedDateTime endTimeOfFirstBar = meta.getBeginTime().plusSeconds(targetDurSec);
 
 		// Build a bar
-		BarBuilder compositeBar = new BarBuilder(endTimeOfFirstBar, sourceDuration);
+		BarBuilder compositeBar = new BarBuilder(endTimeOfFirstBar, targetDuration);
 
 		for (Bar bar : source.getBarData()) {
 			if (!compositeBar.belongsTo(bar)) {
