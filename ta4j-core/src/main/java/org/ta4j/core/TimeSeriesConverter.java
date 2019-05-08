@@ -81,7 +81,7 @@ public class TimeSeriesConverter {
 				ZonedDateTime newEndTimestamp = compositeBar.endTime.plusSeconds(durationMultiple * targetDurSec);
 				// We require a new bar
 
-				compositeBar = new BarBuilder(newEndTimestamp, sourceDuration);
+				compositeBar = new BarBuilder(newEndTimestamp, targetDuration);
 				assert compositeBar.belongsTo(bar);
 			}
 			// Merge bars
