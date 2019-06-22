@@ -1,6 +1,7 @@
 package org.ta4j.core;
 
 import java.time.Duration;
+import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 
@@ -10,8 +11,7 @@ import org.ta4j.core.num.Num;
  * Down samples a time series to a lower time frame granularity.
  * <p>
  * In other words this class may combine multiple 5 minute bars to a 15 minute
- * bar.
- * Currently trades are not transfered into the new series.
+ * bar. Currently trades are not transfered into the new series.
  * 
  * @author Kilian
  *
@@ -19,8 +19,9 @@ import org.ta4j.core.num.Num;
 public class TimeSeriesConverter {
 
 	/**
-	 * Convert a time series from a small duration to a time series with a higher
-	 * duration.
+	 * Convert a time series to a time series with a longer duration. The first bar
+	 * of the new time series will start at the first bar of the old series.
+	 * 
 	 * 
 	 * @implnote This native implementation can handle gaps in data but assumes each
 	 *           bar to have the same duration as the very first bar.
@@ -35,6 +36,28 @@ public class TimeSeriesConverter {
 	 * @return the newly create time series
 	 */
 	public static TimeSeries convert(TimeSeries source, Duration targetDuration) {
+		return convert(source, targetDuration, null);
+	}
+
+	/**
+	 * Convert a time series to a time series with a longer duration. The first bar
+	 * of the new time series will start at tje defined startOfFirstBar time or any
+	 * whole multiple
+	 * 
+	 * @implnote This native implementation can handle gaps in data but assumes each
+	 *           bar to have the same duration as the very first bar.
+	 *           <p>
+	 *           The created series are not linked. updates made to either series
+	 *           are <b>not</b> in the other.
+	 * 
+	 * @param source          the time series the bars are read from
+	 * @param targetDuration  the duration of the newly created series. The duration
+	 *                        has to be greater than the source duration and be
+	 *                        divisible by it.
+	 * @param startOfFirstBar the time of a day a random bar of the series starts
+	 * @return the newly create time series
+	 */
+	public static TimeSeries convert(TimeSeries source, Duration targetDuration, LocalTime startOfFirstBar) {
 
 		Bar meta = source.getFirstBar();
 		Duration sourceDuration = meta.getTimePeriod();
@@ -60,17 +83,40 @@ public class TimeSeriesConverter {
 			throw new IllegalArgumentException("The target duraton must be a multiple of the source duration");
 		}
 
-		
-		TimeSeries targetSeries = new BaseTimeSeriesBuilder().withName(source.getName()).build();
-		ZonedDateTime endTimeOfFirstBar = meta.getBeginTime().plusSeconds(targetDurSec);
+		TimeSeries targetSeries = new BaseTimeSeriesBuilder().withName(source.getName())
+				.withNumTypeOf(source.function()).build();
+		ZonedDateTime endTimeOfFirstBar;
+
+		// Set the start and end of the first bar in the time series.
+		// Support to define the custom start point of a bar
+
+		ZonedDateTime firstTs = meta.getBeginTime();
+
+		if (startOfFirstBar == null) {
+			endTimeOfFirstBar = firstTs.plusSeconds(targetDurSec);
+		} else {
+			ZonedDateTime beginTime = firstTs.with(startOfFirstBar);
+
+			// If the local time is smaller than the time we currently have we have to
+			if (beginTime.isAfter(firstTs)) {
+				long deltaDays = beginTime.until(firstTs, ChronoUnit.DAYS) + 1;
+				// Since we have a given start time move the start time a day earlier.
+				beginTime = beginTime.minusDays(deltaDays);
+			}
+			endTimeOfFirstBar = beginTime.plusSeconds(targetDurSec);
+		}
 
 		// Build a bar
 		BarBuilder compositeBar = new BarBuilder(endTimeOfFirstBar, targetDuration);
 
 		for (Bar bar : source.getBarData()) {
 			if (!compositeBar.belongsTo(bar)) {
+
 				// This bar is finished add it to the new series
-				targetSeries.addBar(compositeBar.buildBar());
+
+				if (compositeBar.isValid()) {
+					targetSeries.addBar(compositeBar.buildBar());
+				}
 
 				// Check the next valid end bar time
 
@@ -95,7 +141,7 @@ public class TimeSeriesConverter {
 
 	/**
 	 * Utility method to aggregate bars
-	 *  
+	 * 
 	 * @author Kilian
 	 */
 	static class BarBuilder {
@@ -122,6 +168,15 @@ public class TimeSeriesConverter {
 		public BarBuilder(ZonedDateTime endTime, Duration duration) {
 			this.endTime = endTime;
 			this.timePeriod = duration;
+		}
+
+		/**
+		 * @return true if the calling {@link #buildBar()} will return a valid non null
+		 *         bar
+		 */
+		public boolean isValid() {
+			return timePeriod != null && endTime != null && openPrice != null && maxPrice != null && minPrice != null
+					&& closePrice != null && volume != null && amount != null;
 		}
 
 		/**
